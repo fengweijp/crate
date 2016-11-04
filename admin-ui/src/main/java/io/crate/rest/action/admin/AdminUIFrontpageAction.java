@@ -24,21 +24,21 @@
 
 package io.crate.rest.action.admin;
 
-import com.google.common.collect.ImmutableSet;
 import io.crate.rest.CrateRestMainAction;
-import org.elasticsearch.client.Client;
+import org.elasticsearch.client.node.NodeClient;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.rest.*;
 
-import java.util.Set;
+import java.io.IOException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.elasticsearch.rest.RestRequest.Method.GET;
 
 /**
- * RestHandlerAction to return a html page containing informations about crate
+ * RestHandlerAction to return a html page containing information about crate
  */
 public class AdminUIFrontpageAction extends BaseRestHandler {
 
@@ -47,8 +47,8 @@ public class AdminUIFrontpageAction extends BaseRestHandler {
     private final RestController controller;
 
     @Inject
-    public AdminUIFrontpageAction(CrateRestMainAction crateRestMainAction, Settings settings, Client client, RestController controller) {
-        super(settings, controller, client);
+    public AdminUIFrontpageAction(CrateRestMainAction crateRestMainAction, Settings settings, RestController controller) {
+        super(settings);
         this.crateRestMainAction = crateRestMainAction;
         this.controller = controller;
     }
@@ -59,20 +59,17 @@ public class AdminUIFrontpageAction extends BaseRestHandler {
     }
 
     @Override
-    protected void handleRequest(RestRequest request, RestChannel channel, Client client) throws Exception {
-        if (!isBrowser(request.header("user-agent"))){
-            crateRestMainAction.handleRequest(request, channel, client);
-            return;
+    protected RestChannelConsumer prepareRequest(RestRequest request, NodeClient client) throws IOException {
+        if (!isBrowser(request.header("user-agent"))
+            || (request.header("accept") != null && request.header("accept").contains("application/json"))) {
+            return crateRestMainAction.prepareRequest(request, client);
         }
-
-        if (request.header("accept") != null &&  request.header("accept").toString().contains("application/json")){
-            crateRestMainAction.handleRequest(request, channel, client);
-            return;
-        }
-
-        BytesRestResponse resp = new BytesRestResponse(RestStatus.TEMPORARY_REDIRECT);
-        resp.addHeader("Location", "/_plugin/crate-admin/");
-        channel.sendResponse(resp);
+        return channel -> {
+            XContentBuilder builder = channel.newBuilder();
+            BytesRestResponse resp = new BytesRestResponse(RestStatus.TEMPORARY_REDIRECT, builder);
+            resp.addHeader("Location", "/_plugin/crate-admin/");
+            channel.sendResponse(resp);
+        };
     }
 
     private boolean isBrowser(String headerValue) {
